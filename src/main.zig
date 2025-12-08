@@ -19,6 +19,7 @@ pub fn main() !void {
     try solveDay5(arena.allocator());
     try solveDay6(arena.allocator());
     try solveDay7(arena.allocator());
+    try solveDay8(arena.allocator());
 }
 
 pub fn solveDay1(allocator: std.mem.Allocator) !void {
@@ -88,4 +89,14 @@ pub fn solveDay7(allocator: std.mem.Allocator) !void {
 
     const solution2 = advent_2025.day7_tachyon_timelines(trimmed);
     std.debug.print("[day 7] solution part 2: {d}\n", .{solution2});
+}
+
+pub fn solveDay8(allocator: std.mem.Allocator) !void {
+    const file_data = try readInputFile(allocator, "day8_input.txt");
+    const trimmed = std.mem.trim(u8, file_data, &std.ascii.whitespace);
+    const solution = advent_2025.day8_playground_circuits(trimmed, 1000);
+    std.debug.print("[day 8] solution part 1: {d}\n", .{solution});
+
+    const solution2 = advent_2025.day8_last_connection_x_product(trimmed);
+    std.debug.print("[day 8] solution part 2: {d}\n", .{solution2});
 }

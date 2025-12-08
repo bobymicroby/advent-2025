@@ -894,3 +894,211 @@ test "day7 - tachyon splits" {
     try std.testing.expectEqual(@as(u32, 21), day7_tachyon_splits(input));
     try std.testing.expectEqual(@as(u64, 40), day7_tachyon_timelines(input));
 }
+
+const JunctionBox = struct {
+    x: i32,
+    y: i32,
+    z: i32,
+
+    fn distanceTo(self: JunctionBox, other: JunctionBox) u64 {
+        const dx: i64 = @as(i64, self.x) - @as(i64, other.x);
+        const dy: i64 = @as(i64, self.y) - @as(i64, other.y);
+        const dz: i64 = @as(i64, self.z) - @as(i64, other.z);
+        return @intCast(dx * dx + dy * dy + dz * dz);
+    }
+};
+
+const Connection = struct {
+    distance: u64,
+    box_a: u16,
+    box_b: u16,
+
+    fn byDistance(_: void, a: Connection, b: Connection) bool {
+        return a.distance < b.distance;
+    }
+};
+
+const CircuitTracker = struct {
+    parent: [2048]u16 = undefined,
+    rank: [2048]u8 = undefined,
+    circuit_count: usize,
+
+    fn init(n: usize) CircuitTracker {
+        var tracker = CircuitTracker{ .circuit_count = n };
+        for (0..n) |i| {
+            tracker.parent[i] = @intCast(i);
+            tracker.rank[i] = 0;
+        }
+        return tracker;
+    }
+
+    fn findCircuit(self: *CircuitTracker, box: u16) u16 {
+        var current = box;
+        while (self.parent[current] != current) {
+            self.parent[current] = self.parent[self.parent[current]];
+            current = self.parent[current];
+        }
+        return current;
+    }
+
+    fn connect(self: *CircuitTracker, box_a: u16, box_b: u16) bool {
+        const circuit_a = self.findCircuit(box_a);
+        const circuit_b = self.findCircuit(box_b);
+
+        const already_connected = circuit_a == circuit_b;
+        if (already_connected) return false;
+
+        if (self.rank[circuit_a] < self.rank[circuit_b]) {
+            self.parent[circuit_a] = circuit_b;
+        } else if (self.rank[circuit_a] > self.rank[circuit_b]) {
+            self.parent[circuit_b] = circuit_a;
+        } else {
+            self.parent[circuit_b] = circuit_a;
+            self.rank[circuit_a] += 1;
+        }
+
+        self.circuit_count -= 1;
+        return true;
+    }
+
+    fn getCircuitSizes(self: *CircuitTracker, n: usize, buffer: []u32) []u32 {
+        @memset(buffer[0..n], 0);
+
+        for (0..n) |i| {
+            const circuit = self.findCircuit(@intCast(i));
+            buffer[circuit] += 1;
+        }
+
+        var count: usize = 0;
+        for (buffer[0..n]) |size| {
+            if (size > 0) {
+                buffer[count] = size;
+                count += 1;
+            }
+        }
+
+        const sizes = buffer[0..count];
+        std.mem.sort(u32, sizes, {}, std.sort.desc(u32));
+        return sizes;
+    }
+};
+
+fn parseJunctionBoxes(input: []const u8, buffer: []JunctionBox) []JunctionBox {
+    var count: usize = 0;
+    var lines = std.mem.splitScalar(u8, input, '\n');
+
+    while (lines.next()) |line| {
+        if (line.len == 0) continue;
+        if (count >= buffer.len) break;
+
+        var coords = std.mem.splitScalar(u8, line, ',');
+        const x = std.fmt.parseInt(i32, coords.next() orelse continue, 10) catch continue;
+        const y = std.fmt.parseInt(i32, coords.next() orelse continue, 10) catch continue;
+        const z = std.fmt.parseInt(i32, coords.next() orelse continue, 10) catch continue;
+
+        buffer[count] = .{ .x = x, .y = y, .z = z };
+        count += 1;
+    }
+
+    return buffer[0..count];
+}
+
+fn buildAllConnections(boxes: []const JunctionBox, buffer: []Connection) []Connection {
+    var count: usize = 0;
+    for (boxes, 0..) |box_a, i| {
+        for (boxes[i + 1 ..], i + 1..) |box_b, j| {
+            if (count >= buffer.len) break;
+            buffer[count] = .{
+                .distance = box_a.distanceTo(box_b),
+                .box_a = @intCast(i),
+                .box_b = @intCast(j),
+            };
+            count += 1;
+        }
+    }
+    return buffer[0..count];
+}
+
+fn sortByDistance(connections: []Connection) void {
+    std.mem.sort(Connection, connections, {}, Connection.byDistance);
+}
+
+fn productOfTopThree(sizes: []const u32) u64 {
+    if (sizes.len >= 3) return @as(u64, sizes[0]) * sizes[1] * sizes[2];
+    if (sizes.len == 2) return @as(u64, sizes[0]) * sizes[1];
+    if (sizes.len == 1) return sizes[0];
+    return 0;
+}
+
+var connection_buffer: [2048 * 1024]Connection = undefined;
+
+pub fn day8_playground_circuits(input: []const u8, pairs_to_process: u32) u64 {
+    var box_buffer: [2048]JunctionBox = undefined;
+    const boxes = parseJunctionBoxes(input, &box_buffer);
+    if (boxes.len < 2) return 0;
+
+    const connections = buildAllConnections(boxes, &connection_buffer);
+    sortByDistance(connections);
+
+    var circuits = CircuitTracker.init(boxes.len);
+
+    for (connections, 0..) |conn, i| {
+        if (i >= pairs_to_process) break;
+        _ = circuits.connect(conn.box_a, conn.box_b);
+    }
+
+    var size_buffer: [2048]u32 = undefined;
+    const sizes = circuits.getCircuitSizes(boxes.len, &size_buffer);
+    return productOfTopThree(sizes);
+}
+
+pub fn day8_last_connection_x_product(input: []const u8) u64 {
+    var box_buffer: [2048]JunctionBox = undefined;
+    const boxes = parseJunctionBoxes(input, &box_buffer);
+    if (boxes.len < 2) return 0;
+
+    const connections = buildAllConnections(boxes, &connection_buffer);
+    sortByDistance(connections);
+
+    var circuits = CircuitTracker.init(boxes.len);
+
+    for (connections) |conn| {
+        const merged = circuits.connect(conn.box_a, conn.box_b);
+        const all_connected = circuits.circuit_count == 1;
+
+        if (merged and all_connected) {
+            const x1: u64 = @intCast(boxes[conn.box_a].x);
+            const x2: u64 = @intCast(boxes[conn.box_b].x);
+            return x1 * x2;
+        }
+    }
+    return 0;
+}
+
+test "day8 - playground circuits" {
+    const input =
+        \\162,817,812
+        \\57,618,57
+        \\906,360,560
+        \\592,479,940
+        \\352,342,300
+        \\466,668,158
+        \\542,29,236
+        \\431,825,988
+        \\739,650,466
+        \\52,470,668
+        \\216,146,977
+        \\819,987,18
+        \\117,168,530
+        \\805,96,715
+        \\346,949,466
+        \\970,615,88
+        \\941,993,340
+        \\862,61,35
+        \\984,92,344
+        \\425,690,689
+    ;
+
+    try std.testing.expectEqual(@as(u64, 40), day8_playground_circuits(input, 10));
+    try std.testing.expectEqual(@as(u64, 25272), day8_last_connection_x_product(input));
+}
